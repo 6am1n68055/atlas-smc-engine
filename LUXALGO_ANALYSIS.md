@@ -2,336 +2,222 @@
 
 > **Purpose**
 >
-> This document serves as the reverse-engineering notebook for the LuxAlgo Smart Money Concepts indicator.
+> This document captures the reverse engineering process of the LuxAlgo Smart Money Concepts indicator.
 >
-> The goal is **not** to copy the implementation, but to understand its behaviour, architecture, algorithms, and design decisions so that we can build an independent clean-room implementation.
+> The objective is to understand the indicator's architecture, algorithms, and behaviour in order to build an independent clean-room implementation for the Atlas Engine.
 >
-> Every observation should be classified as one of the following:
->
-> - ✅ Confirmed
-> - 🟡 Hypothesis
-> - ❓Question
-> - 🧪 Experiment
->
-> Only confirmed observations should influence the implementation.
+> No source code from LuxAlgo is reproduced here. Only observations, hypotheses, experiments, conclusions, and Atlas design decisions are documented.
 
 ---
 
-# Project Goal
-
-Recreate the behaviour of the LuxAlgo Smart Money Concepts indicator while developing an original, maintainable, modular implementation.
-
-Success is measured by behavioural parity rather than identical source code.
+# Reverse Engineering Sessions
 
 ---
 
-# High-Level Architecture
+# Session 001 — Core Data Model & Engine State
 
-Current understanding of the indicator:
+**Date:** 2026-07-21
+
+## Objective
+
+Understand how the indicator models market concepts and manages state before analysing any trading algorithms.
+
+---
+
+## OBS-001 — Domain-Driven Design
+
+**Status:** ✅ Confirmed
+
+The indicator models trading concepts as reusable data structures (UDTs) rather than relying solely on primitive variables.
+
+### Identified Domain Models
+
+| Data Structure | Purpose |
+|----------------|---------|
+| `alerts` | Stores alert events generated during the current bar |
+| `pivot` | Represents a market structure pivot |
+| `trend` | Stores current trend bias |
+| `orderBlock` | Represents an Order Block |
+| `fairValueGap` | Represents a Fair Value Gap |
+| `trailingExtremes` | Tracks recent market extremes |
+| `equalDisplay` | Stores Equal High / Low drawing objects |
+
+### Conclusion
+
+The indicator is organized around domain objects, making the code modular and easier to maintain.
+
+---
+
+## OBS-002 — Persistent Engine State
+
+**Status:** ✅ Confirmed
+
+The indicator stores market state across bars using persistent objects (`var`) and arrays.
+
+Persistent state includes:
+
+- Swing High
+- Swing Low
+- Internal High
+- Internal Low
+- Equal High
+- Equal Low
+- Swing Trend
+- Internal Trend
+- Order Blocks
+- Fair Value Gaps
+- Historical price data
+
+### Conclusion
+
+The engine continuously updates market state rather than recalculating everything from scratch on every candle.
+
+---
+
+## OBS-003 — Historical Data Storage
+
+**Status:** ✅ Confirmed
+
+Historical market data is stored explicitly.
+
+Observed collections include:
+
+- Parsed Highs
+- Parsed Lows
+- Raw Highs
+- Raw Lows
+- Time values
+- Order Blocks
+- Fair Value Gaps
+
+### Conclusion
+
+The engine relies on maintained historical state instead of depending exclusively on Pine Script's historical indexing.
+
+---
+
+## OBS-004 — Price Preprocessing
+
+**Status:** ✅ Confirmed
+
+Before higher-level market structure calculations begin, price data is preprocessed.
+
+Observed preprocessing:
+
+- Volatility measurement
+- High-volatility candle detection
+- Parsed High
+- Parsed Low
+
+### Conclusion
+
+Swing detection is likely performed on processed price data rather than raw OHLC values.
+
+The exact preprocessing algorithm requires further investigation.
+
+---
+
+## OBS-005 — Rendering Optimization
+
+**Status:** ✅ Confirmed
+
+Chart objects such as Order Block boxes are created only once during script initialization and reused afterwards.
+
+### Conclusion
+
+The indicator minimizes runtime object creation by updating existing graphical objects.
+
+This is a performance optimization.
+
+---
+
+## HYP-001 — Initial Processing Pipeline
+
+**Status:** 🟡 Hypothesis
+
+Based on the analysed section, the engine appears to follow the pipeline below:
 
 ```
-LuxAlgo Smart Money Concepts
-
-                Inputs
-                   │
-                   ▼
-        Swing Detection Engine
-                   │
-                   ▼
-         Market Structure Engine
-           ├── Swing Structure
-           └── Internal Structure
-                   │
-                   ▼
-      BOS / CHoCH Detection Engine
-                   │
-        ┌──────────┼──────────┐
-        ▼          ▼          ▼
- Order Blocks   Liquidity   Fair Value Gaps
-        │          │          │
-        └──────────┼──────────┘
-                   ▼
-      Premium / Discount Zones
-                   │
-                   ▼
-      Visualization & Alerts
+New Candle
+      │
+      ▼
+Read OHLC
+      │
+      ▼
+Volatility Filter
+      │
+      ▼
+Parsed High / Parsed Low
+      │
+      ▼
+Store Historical Data
+      │
+      ▼
+Market Structure Engine
 ```
 
-Status:
-
-🟡 Initial architecture hypothesis.
+This hypothesis will be validated during Swing Detection analysis.
 
 ---
 
-# Major Subsystems
+# Atlas Design Decisions
 
-| Component | Status |
-|------------|--------|
-| Inputs | 🟡 |
-| Swing Detection | 🟡 |
-| Internal Structure | 🟡 |
-| Swing Structure | 🟡 |
-| BOS | 🟡 |
-| CHoCH | 🟡 |
-| Order Blocks | 🟡 |
-| Fair Value Gaps | 🟡 |
-| Liquidity | 🟡 |
-| Equal High / Low | 🟡 |
-| Previous High / Low | 🟡 |
-| Premium / Discount | 🟡 |
-| Candle Coloring | 🟡 |
-| Alerts | 🟡 |
+The following decisions apply to Atlas and are independent of LuxAlgo.
 
 ---
 
-# Data Flow
+## AD-001 — Engine / Renderer Separation
 
-Current hypothesis:
+**Decision**
 
-```
-OHLC Data
-     │
-     ▼
-Pivot Detection
-     │
-     ▼
-Swing Identification
-     │
-     ▼
-Market Structure
-     │
-     ▼
-Trend State
-     │
-     ▼
-BOS / CHoCH
-     │
-     ├──────────────┐
-     ▼              ▼
-Order Blocks     Liquidity
-     │              │
-     └──────┬───────┘
-            ▼
-      Fair Value Gaps
-            ▼
- Premium / Discount Zones
-            ▼
-      Chart Rendering
-```
+Atlas will separate market logic from visualization.
 
-Status:
+The core engine will contain only market data and trading logic.
 
-🟡 Needs validation.
+Rendering (boxes, labels, lines, colours) will be implemented in a dedicated visualization layer.
+
+### Reason
+
+This allows the same engine to be reused by:
+
+- TradingView
+- Python
+- Backtesting
+- AI Trading Assistant
+
+without introducing TradingView-specific dependencies.
 
 ---
 
-# Observations
+# Session Summary
 
-## General
+### Confirmed Findings
 
-Status: 🟡
+- Domain-driven architecture
+- Persistent engine state
+- Explicit historical data storage
+- Price preprocessing stage
+- Rendering object reuse
 
-Observations:
-
-- Indicator is modular.
-- Features can be individually enabled or disabled.
-- Internal and Swing structures appear to operate independently.
-- Several components reuse information produced by earlier stages.
-
----
-
-# Unknowns
-
-Current questions:
-
-- Which subsystem runs first?
-- Which calculations are performed on every candle?
-- Which calculations only occur after pivot confirmation?
-- Which objects are persistent?
-- Which calculations depend on historical state?
-- Which modules communicate with each other?
-
----
-
-# Reverse Engineering Strategy
-
-Each subsystem will be analysed independently.
-
-Workflow:
-
-1. Read source code.
-2. Observe chart behaviour.
-3. Form hypotheses.
-4. Validate hypotheses.
-5. Document findings.
-6. Implement independently.
-7. Compare behaviour.
-
----
-
-# Feature Analysis Checklist
-
-## Swing Detection
-
-Status:
-
-🔲 Not Started
-
-Questions:
+### Open Questions
 
 - How are pivots detected?
-- Pivot length?
-- Confirmation logic?
-- Equal highs?
-- Equal lows?
-- Noise filtering?
-- Internal vs Swing pivots?
+- Why are Parsed High and Parsed Low required?
+- How does preprocessing affect Swing Detection?
+- Which subsystem consumes `trailingExtremes`?
+- When is trend state updated?
 
 ---
 
-## Market Structure
+# Next Session
 
-Status:
+**Topic**
 
-🔲 Not Started
+Swing Detection Engine
 
-Questions:
+Objectives:
 
-- How is trend determined?
-- When does structure update?
-- How are higher highs detected?
-- How are lower lows detected?
-
----
-
-## BOS
-
-Status:
-
-🔲 Not Started
-
-Questions:
-
-- What exactly confirms a BOS?
-- Wick or close?
-- Internal BOS?
-- Swing BOS?
-- Multi-break handling?
-
----
-
-## CHoCH
-
-Status:
-
-🔲 Not Started
-
-Questions:
-
-- Relationship with BOS?
-- Trend reversal conditions?
-- Internal CHoCH?
-- Swing CHoCH?
-
----
-
-## Order Blocks
-
-Status:
-
-🔲 Not Started
-
-Questions:
-
-- Candidate candle?
-- Validation?
-- Mitigation?
-- Removal rules?
-
----
-
-## Fair Value Gaps
-
-Status:
-
-🔲 Not Started
-
-Questions:
-
-- Gap definition?
-- Gap removal?
-- Partial fills?
-- Filtering?
-
----
-
-## Liquidity
-
-Status:
-
-🔲 Not Started
-
-Questions:
-
-- Equal highs?
-- Equal lows?
-- Swing liquidity?
-- Internal liquidity?
-
----
-
-## Premium / Discount
-
-Status:
-
-🔲 Not Started
-
-Questions:
-
-- Reference swing?
-- Calculation method?
-- Midpoint?
-- Dynamic updates?
-
----
-
-# Experiments
-
-This section records practical experiments performed on TradingView.
-
-Example format:
-
-Date:
-
-Instrument:
-
-Timeframe:
-
-Settings:
-
-Observation:
-
-Conclusion:
-
----
-
-# Conclusions
-
-This section should contain only validated conclusions.
-
-Nothing enters this section until it has been verified.
-
----
-
-# Implementation Readiness
-
-| Module | Analysis | Design | Code | Validation |
-|---------|----------|--------|------|------------|
-| Swing Detection | ⬜ | ⬜ | ⬜ | ⬜ |
-| Market Structure | ⬜ | ⬜ | ⬜ | ⬜ |
-| BOS | ⬜ | ⬜ | ⬜ | ⬜ |
-| CHoCH | ⬜ | ⬜ | ⬜ | ⬜ |
-| Order Blocks | ⬜ | ⬜ | ⬜ | ⬜ |
-| Fair Value Gaps | ⬜ | ⬜ | ⬜ | ⬜ |
-| Liquidity | ⬜ | ⬜ | ⬜ | ⬜ |
-| Premium / Discount | ⬜ | ⬜ | ⬜ | ⬜ |
+- Understand pivot detection
+- Identify swing confirmation rules
+- Analyse internal vs swing pivots
+- Document the complete Swing Detection pipeline
