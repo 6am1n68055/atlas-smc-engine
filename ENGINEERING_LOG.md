@@ -143,7 +143,7 @@ Status:
 
 ✅ Initial architecture discussion completed
 
-⏳ Reverse engineering LuxAlgo architecture
+✅ Session 001: Core data model and engine state analysis completed
 
 ⏳ Swing Detection design
 
@@ -155,3 +155,19 @@ The project will prioritize engineering quality over development speed.
 
 Time invested in design and documentation is expected to reduce implementation complexity
 and improve long-term maintainability.
+
+---
+
+## Session 001 - Architecture & Data Model
+
+### Completed
+
+- Analysed the core data structures and persistent state used by the LuxAlgo SMC indicator.
+- Identified the domain model, historical data storage, price preprocessing stage, and rendering-object reuse.
+- Documented confirmed findings, an initial processing-pipeline hypothesis, and an Atlas engine/renderer separation decision in `LUXALGO_ANALYSIS.md`.
+
+### Outcome
+
+Completed the initial architecture and data-model analysis.
+
+The next milestone is reverse engineering the Swing Detection subsystem.
